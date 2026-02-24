@@ -714,6 +714,18 @@ def load_proxies_from_text(text):
             proxies.append(f"http://{line}")
     return proxies
 
+def sort_hit_lines_by_points(hit_lines):
+    """Sort hit lines for rewards mode by the point value inside [ ]."""
+    def extract_points(line):
+        try:
+            match = re.search(r'\[(\d+)\]', line)
+            if match:
+                return int(match.group(1))
+        except:
+            pass
+        return 0
+    return sorted(hit_lines, key=extract_points)
+
 class CheckerSession:
     def __init__(self, chat_id, message_id, combos, threads_count, mode, use_default_proxies=False, custom_proxies=None):
         self.chat_id = chat_id
@@ -869,6 +881,12 @@ def send_result_files(s):
     os.makedirs(session_dir, exist_ok=True)
     files = []
 
+    # For rewards mode, sort hit_lines by points ascending
+    if s.mode == 'rewards' and s.hit_lines:
+        sorted_hits = sort_hit_lines_by_points(s.hit_lines)
+    else:
+        sorted_hits = s.hit_lines
+
     if s.mode == 'xbox':
         if s.hit_lines:
             path = os.path.join(session_dir, "Premium.txt")
@@ -881,10 +899,10 @@ def send_result_files(s):
                 f.write('\n'.join(s.free_lines))
             files.append(path)
     else:
-        if s.hit_lines:
+        if sorted_hits:
             path = os.path.join(session_dir, "Hits.txt")
             with open(path, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(s.hit_lines))
+                f.write('\n'.join(sorted_hits))
             files.append(path)
 
     if s.bad_lines:
@@ -1041,7 +1059,8 @@ def checker_worker(s):
                     # Follow original API logic: hit if points > 10
                     if status == "SUCCESS" and points is not None and points > 10:
                         s.hits += 1
-                        s.hit_lines.append(f"{combo} | Points: {points}")
+                        # Format: [points] - email:pass
+                        s.hit_lines.append(f"[{points}] - {combo}")
                     elif status in ("BAD", "AUTH_FAIL", "NOT_ENROLLED", "NO_POINTS", "TIMEOUT", "PROXY_ERROR", "ERROR"):
                         s.bad += 1
                         s.bad_lines.append(f"{combo} | {status} | {message}")
@@ -1369,6 +1388,10 @@ def handle_gethits(call):
                 current_unknown = list(s.unknown_lines)
                 current_bad = s.bad
                 current_checked = s.checked
+
+            # For rewards mode, sort hits
+            if s.mode == 'rewards' and current_hits:
+                current_hits = sort_hit_lines_by_points(current_hits)
 
             temp_dir = f"temp_{session_key}"
             os.makedirs(temp_dir, exist_ok=True)
